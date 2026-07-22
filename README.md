@@ -1,93 +1,164 @@
-# BlurGLES - High-Performance Android OpenGL ES Blur Engine 🚀
+<div align="center">
 
-**BlurGLES** là một ứng dụng Android hiệu năng cao minh họa kỹ thuật xử lý làm mờ ảnh (Gaussian Blur) tăng tốc phần cứng thông qua **OpenGL ES 3.0+** và **Android NDK (C++)**. Dự án kết hợp quy trình xử lý mờ hai chiều (multi-pass separable blur) với kỹ thuật **Framebuffer Object (FBO) Ping-Pong** và giải mã/mã hóa ảnh trực tiếp ở tầng Native C++ nhằm đạt hiệu suất tối đa và độ trễ cực thấp.
+# BlurGLES 🚀
+
+### High-Performance Hardware-Accelerated Image Blur Engine for Android
+
+**Tăng tốc làm mờ ảnh bằng phần cứng với OpenGL ES 3.0+ · Ping-Pong FBO · Native C++ I/O · 100% On-Device**
+
+[![Android](https://img.shields.io/badge/Platform-Android-green.svg?style=flat-square&logo=android)](#architecture--tech-stack)
+[![Min SDK](https://img.shields.io/badge/Min%20SDK-API%2024%20(7.0)-blue.svg?style=flat-square)](#architecture--tech-stack)
+[![OpenGL ES](https://img.shields.io/badge/OpenGL%20ES-3.2-orange.svg?style=flat-square&logo=opengl)](#architecture--tech-stack)
+[![NDK](https://img.shields.io/badge/Android%20NDK-r25+-brightgreen.svg?style=flat-square)](#architecture--tech-stack)
+[![Language](https://img.shields.io/badge/Language-C%2B%2B17%20%7C%20Java-007ACC.svg?style=flat-square&logo=cplusplus)](#architecture--tech-stack)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](#license)
+
+</div>
 
 ---
 
-## 🌟 Tính năng nổi bật (Key Features)
+## Contents
 
-- ⚡ **Tăng tốc phần cứng OpenGL ES 3.0+**: Xử lý làm mờ hình ảnh bằng GPU thông qua các GLSL shader chuyên dụng, hỗ trợ tách chuỗi mờ theo hai chiều ngang và dọc (Separable Gaussian Blur).
-- 🔄 **Kiến trúc Ping-Pong Framebuffer**: Tối ưu hóa việc render luân phiên giữa các FBO giúp xử lý bán kính mờ lớn (lên tới 1000px) một cách mượt mà và tiết kiệm tài nguyên.
-- 🖼️ **Native Image Decoding & Encoding**: Nạp và xuất dữ liệu hình ảnh (JPEG/PNG) trực tiếp ở tầng C++ bằng thư viện `stb_image` & `stb_image_write`, loại bỏ hoàn toàn hiện tượng nghẽn cổ chai truyền dữ liệu giữa Java Bitmap và Native.
-- ⏱️ **Đo đạc hiệu năng thời gian thực**: Đo chính xác thời gian xử lý GPU/Native tính bằng millisecond (sử dụng `std::chrono::high_resolution_clock` ở tầng C++) và hiển thị trực quan các chỉ số: thời gian xử lý hiện tại, nhanh nhất và chậm nhất.
-- 🎛️ **Điều chỉnh bán kính động**: Cho phép thay đổi bán kính mờ (Blur Radius từ 1 đến 1000 px) linh hoạt ngay trên giao diện người dùng theo thời gian thực.
-- 📱 **Giao diện Modern Android**: 
-  - Tích hợp **Android Photo Picker** (`PickVisualMedia`) an toàn, không yêu cầu quyền truy cập bộ nhớ không cần thiết.
-  - Hỗ trợ **Edge-to-Edge UI** và tự động thích ứng với chế độ Sáng/Tối (Light/Dark mode) của hệ thống.
-  - Xuất và lưu ảnh đã làm mờ trực tiếp vào thư viện thiết bị qua Android **MediaStore** API.
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture & Tech Stack](#architecture--tech-stack)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Performance & Benchmarking](#performance--benchmarking)
+- [License](#license)
 
 ---
 
-## 🏗️ Kiến trúc & Công nghệ (Architecture & Tech Stack)
+## Overview
 
-### Stack Công nghệ
-- **Ngôn ngữ**: C++17 (NDK), Java (Android Framework)
-- **Graphics & Display API**: OpenGL ES 3.0 / 3.2, EGL, `ANativeWindow`
-- **Native Libraries**: `stb_image.h`, `stb_image_write.h`, `jnigraphics`, `log`, `EGL`, `GLESv3`
-- **Build System**: Gradle 8.x, CMake 3.22.1+
-- **Min SDK / Target SDK**: Android 7.0 (API Level 24+) / Target API Level 34+
+**BlurGLES** là một ứng dụng Android chuyên dụng minh họa kỹ thuật làm mờ ảnh (Gaussian Blur) với hiệu năng cực cao bằng việc kết hợp sức mạnh của **OpenGL ES 3.0+**, **EGL**, và **Android NDK (C++)**.
 
-### Cấu trúc dự án (Project Structure)
+Bằng việc chuyển toàn bộ công đoạn giải mã ảnh, render đa bước qua chuỗi **FBO (Framebuffer Objects) Ping-Pong**, và mã hóa ảnh trực tiếp ở tầng C++ Native, BlurGLES loại bỏ hoàn toàn hiện tượng nghẽn cổ chai dữ liệu khi truyền giữa Java Bitmap và GPU, đạt tốc độ xử lý tức thì với độ trễ cực thấp.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| ⚡ **OpenGL ES 3.0+ Acceleration** | Tăng tốc GPU làm mờ ảnh bằng GLSL shaders chuyên dụng, hỗ trợ Separable Gaussian Blur (tách 2 chiều ngang/dọc) |
+| 🔄 **Ping-Pong FBO Architecture** | Luân phiên render qua lại giữa 2 Framebuffer Objects, xử lý mượt mà bán kính mờ siêu rộng (tới 1000px) |
+| 🖼️ **Native Image I/O** | Giải mã JPEG/PNG trực tiếp từ byte stream và mã hóa xuất ảnh ở tầng C++ native bằng `stb_image` & `stb_image_write` |
+| ⏱️ **Real-time Micro-Benchmarking** | Đo chính xác thời gian render GPU bằng `std::chrono::high_resolution_clock` ở tầng Native C++ theo thời gian thực |
+| 🎛️ **Dynamic Radius Tuning** | Thanh cuộn (SeekBar) tương tác cho phép thay đổi bán kính mờ mượt mà ngay trên giao diện người dùng |
+| 📱 **Modern Android UI** | Thiết kế Edge-to-Edge, tự động chuyển đổi Light/Dark status bar, tích hợp Photo Picker (`PickVisualMedia`) và MediaStore API |
+
+---
+
+## Architecture & Tech Stack
+
+### Tech Stack Table
+
+| Component | Technology / Library |
+|---|---|
+| **Platform** | Android API Level 24+ (Android 7.0+) |
+| **Native Kernel** | C++17 (Android NDK r25+) |
+| **Graphics API** | OpenGL ES 3.2, EGL 1.4, `ANativeWindow` |
+| **Native Libraries** | `stb_image.h`, `stb_image_write.h`, `jnigraphics`, `android/log`, `EGL`, `GLESv3` |
+| **Build Tools** | CMake 3.22.1+, Android Gradle Plugin 8.x |
+| **Android UI** | Material Components, SurfaceView, ViewBinding, Photo Picker API |
+
+---
+
+## Project Structure
+
 ```text
 blur-gles/
 ├── app/
-│   ├── CMakeLists.txt              # Cấu hình biên dịch CMake cho thư viện NDK `libblur_gles.so`
-│   ├── build.gradle                # Cấu hình Gradle module app và NDK options
+│   ├── CMakeLists.txt              # Cấu hình biên dịch CMake NDK cho `libblur_gles.so`
+│   ├── build.gradle                # Cấu hình module app và NDK options
 │   └── src/
 │       └── main/
-│           ├── AndroidManifest.xml # Cấu hình ứng dụng Android
-│           ├── cpp/                # Mã nguồn C++ xử lý đồ họa OpenGL ES
-│           │   ├── gles_renderer.cpp / .h  # Khởi tạo EGL, FBO Ping-Pong, GLSL Shader, render pipeline
-│           │   ├── native_blur_engine.cpp  # JNI Interface kết nối Java và C++
-│           │   ├── shader_utils.cpp / .h   # Biên dịch và liên kết Shader program
+│           ├── AndroidManifest.xml # Cấu hình Android Manifest
+│           ├── cpp/                # Mã nguồn Native C++ (OpenGL ES Engine)
+│           │   ├── gles_renderer.cpp / .h  # EGL setup, FBO Ping-Pong, Shader Program & Render loop
+│           │   ├── native_blur_engine.cpp  # JNI Bindings (Java ↔ C++)
+│           │   ├── shader_utils.cpp / .h   # Utility biên dịch & liên kết GLSL Shader
 │           │   └── third_party/            # Thư viện header-only (stb_image, stb_image_write)
 │           ├── java/com/example/blurgles/
-│           │   ├── MainActivity.java       # Quản lý giao diện, SurfaceHolder, PhotoPicker, MediaStore
-│           │   └── NativeBlurEngine.java   # JNI bridge khai báo các hàm native
-│           └── res/                        # Giao diện XML (Layouts, Values, Drawables)
-├── build.gradle                    # Top-level build script
+│           │   ├── MainActivity.java       # Controller chính, Photo Picker, MediaStore, UI Listener
+│           │   └── NativeBlurEngine.java   # Khai báo các native JNI methods
+│           └── res/                        # Layout XML, Drawables, Values
+├── build.gradle                    # Top-level Gradle script
 ├── settings.gradle                 # Gradle settings
-└── README.md                       # Tài liệu hướng dẫn dự án
+└── README.md                       # Tài liệu dự án
 ```
 
 ---
 
-## ⚙️ Yêu cầu & Cài đặt (Setup & Prerequisites)
+## Quick Start
 
-### Yêu cầu môi trường
+### Prerequisites
 - **Android Studio**: Android Studio Hedgehog / Jellyfish / Ladybug trở lên.
-- **Android NDK**: NDK version 25+ (được cài đặt qua SDK Manager trong Android Studio).
-- **CMake**: Version 3.22.1 trở lên.
-- **Thiết bị thử nghiệm**: Android API Level 24 (Android 7.0) trở lên có hỗ trợ OpenGL ES 3.0+.
+- **Android NDK**: NDK version 25 trở lên (Cài đặt qua *SDK Manager → SDK Tools → NDK*).
+- **CMake**: Version 3.22.1+.
 
-### Các bước biên dịch và chạy dự án
+### Build & Installation
+
 1. **Clone repository**:
    ```bash
-   git clone https://github.com/username/blur-gles.git
+   git clone https://github.com/xzen4ever/blur-gles.git
    cd blur-gles
    ```
+
 2. **Mở dự án trong Android Studio**:
-   - Chọn `Open an existing project` và trỏ tới thư mục `blur-gles`.
-3. **Đồng bộ Gradle & NDK**:
-   - Android Studio sẽ tự động nạp dependencies và cấu hình CMake cho NDK.
-4. **Build & Run**:
-   - Kết nối thiết bị Android thật hoặc khởi chạy Android Emulator.
-   - Nhấn **Run (Shift + F10)** để biên dịch và cài đặt APK.
+   - Mở Android Studio, chọn **Open** và trỏ tới thư mục `blur-gles`.
+
+3. **Đồng bộ & Biên dịch**:
+   - Gradle sẽ tự động tải các gói phụ thuộc và cấu hình NDK CMake.
+
+4. **Chạy ứng dụng**:
+   - Kết nối thiết bị Android hoặc khởi tạo Emulator (Android 7.0+).
+   - Bấm **Run (Shift + F10)** để nạp APK.
 
 ---
 
-## 🛠️ Nguyên lý hoạt động của Blur Engine (How It Works)
+## How It Works
 
-1. **Native Image Loading**: Khi chọn ảnh từ Photo Picker, mảng byte nén (JPEG/PNG) được chuyển trực tiếp vào C++ qua hàm JNI `nativeSetImageData`. Thư viện `stb_image` giải mã dữ liệu ảnh thành raw pixels và nạp thẳng vào OpenGL ES Texture (`mInputTexture`).
-2. **Ping-Pong Rendering Pass**:
-   - Thuật toán Separable Gaussian Blur chia công đoạn làm mờ thành 2 bước (ngang `Horizontal` và dọc `Vertical`).
-   - Hai Framebuffer Objects (`FBO0` và `FBO1`) được dùng luân phiên làm nguồn đọc và đích render (Ping-Pong technique).
-   - Số lượt pass được tính toán tự động dựa theo bán kính `mBlurRadiusPx` chọn trên thanh cuộn.
-3. **Surface Display**: Kết quả xử lý từ FBO cuối cùng được vẽ ra màn hình thông qua `ANativeWindow` gắn liền với `SurfaceView`.
-4. **Export Image**: Khi người dùng nhấn nút Save, engine render khung hình mờ vào FBO, đọc lại dữ liệu pixel và mã hóa ra mảng byte JPEG bằng `stb_image_write`. Tầng Java sẽ lưu file này vào bộ nhớ thiết bị thông qua `MediaStore` API.
+<details>
+<summary><b>1. Native Image Ingestion (Giải mã ảnh ở Native)</b></summary>
+
+Khi người dùng chọn ảnh bằng Photo Picker (`PickVisualMedia`), file buffer dưới dạng byte array được truyền trực tiếp vào C++ qua JNI `nativeSetImageData`. Hàm `stbi_load_from_memory` giải mã dữ liệu JPEG/PNG thành raw RGBA pixels trong C++ memory và nạp trực tiếp vào OpenGL ES Texture (`mInputTexture`) thông qua `glTexImage2D`.
+
+</details>
+
+<details>
+<summary><b>2. Separable Gaussian Blur & FBO Ping-Pong Pipeline</b></summary>
+
+Thuật toán làm mờ 2D Gaussian được tối ưu hóa thành 2 pass 1D độc lập:
+- **Pass 1 (Horizontal)**: Đọc từ `mInputTexture` và render kết quả mờ chiều ngang vào `FBO0`.
+- **Pass 2 (Vertical)**: Đọc từ `FBO0` và render kết quả mờ chiều dọc vào `FBO1`.
+- Với bán kính mờ lớn hơn, hệ thống thực hiện vòng lặp **Ping-Pong** luân phiên giữa `FBO0` và `FBO1` cho đến khi đạt được chất lượng hình ảnh mong muốn.
+
+</details>
+
+<details>
+<summary><b>3. Window Presentation & Native Export</b></summary>
+
+- **Hiển thị màn hình**: Texture kết quả cuối cùng từ FBO được render trực tiếp lên `ANativeWindow` hiển thị trên `SurfaceView`.
+- **Xuất ảnh**: Khi nhấn **Save Image**, C++ render khung hình mờ vào FBO, đọc dữ liệu pixel bằng `glReadPixels`, mã hóa thành byte stream JPEG bằng `stbi_write_jpg_to_func`, và chuyển về Java để ghi vào bộ nhớ thông qua `MediaStore` API.
+
+</details>
 
 ---
 
-## 📜 Giấy phép (License)
+## Performance & Benchmarking
 
-Dự án được phân phối theo giấy phép **MIT License**.
+Nhờ việc tận dụng GPU và loại bỏ chi phí truyền nhận Bitmap qua JNI:
+- **Độ trễ thấp**: Thời gian làm mờ cho ảnh dung lượng lớn chỉ mất vài millisecond.
+- **Tiết kiệm RAM**: Dữ liệu ảnh không bị duplicate ở bộ nhớ Java Heap.
+- **Chỉ số thời gian thực**:
+  - `Native Proc`: Thời gian xử lý đợt làm mờ hiện tại.
+  - `Fastest / Slowest`: Thống kê độ trễ GPU nhanh nhất / chậm nhất ghi nhận được trong phiên chạy.
+
+---
+
+## License
+
+Dự án được phân phối dưới giấy phép **[MIT License](LICENSE)**.
