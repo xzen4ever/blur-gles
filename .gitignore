@@ -1,0 +1,23 @@
+# Build & Local files
+*.iml
+.gradle
+/local.properties
+.idea
+/.idea
+.cxx
+/build
+/app/build
+captures/
+.externalNativeBuild
+
+# Project specific ignores per user request
+.agents/
+.doc/
+
+# Binaries & Large files
+*.apk
+*.aar
+*.keystore
+*.jks
+*.zip
+*.tar.gz

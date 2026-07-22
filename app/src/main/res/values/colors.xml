@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_app">#F8F9FA</color>
+    <color name="surface_card">#FFFFFF</color>
+    <color name="surface_card_border">#E4E4E7</color>
+    <color name="surface_badge">#F4F4F5</color>
+    <color name="surface_badge_border">#E4E4E7</color>
+    
+    <color name="accent_primary">#F59E0B</color>
+    <color name="accent_primary_pressed">#D97706</color>
+    <color name="accent_gold">#D97706</color>
+    <color name="accent_gold_subtle">#FEF3C7</color>
+    <color name="accent_gold_stroke">#FCD34D</color>
+    
+    <color name="text_primary">#18181B</color>
+    <color name="text_secondary">#52525B</color>
+    <color name="text_tertiary">#71717A</color>
+    
+    <color name="btn_primary_text">#18181B</color>
+    <color name="btn_secondary_bg">#F4F4F5</color>
+    <color name="btn_secondary_stroke">#E4E4E7</color>
+</resources>
