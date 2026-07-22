@@ -9,6 +9,9 @@
 #include <android/imagedecoder.h>
 #include <cmath>
 #include <algorithm>
+#include <sstream>
+#include <numeric>
+#include <iomanip>
 
 static const char* VERTEX_SHADER_SRC = R"(#version 320 es
 layout(location = 0) in vec2 aPosition;
@@ -84,6 +87,12 @@ GLESRenderer::~GLESRenderer() {
     destroyEGL();
 }
 
+void GLESRenderer::releaseCurrent() {
+    if (mDisplay != EGL_NO_DISPLAY) {
+        eglMakeCurrent(mDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    }
+}
+
 bool GLESRenderer::ensureCurrent() {
     if (mDisplay == EGL_NO_DISPLAY || mContext == EGL_NO_CONTEXT) {
         LOGE("ensureCurrent failed: EGL display or context is null");
@@ -91,8 +100,13 @@ bool GLESRenderer::ensureCurrent() {
     }
     if (eglGetCurrentContext() != mContext) {
         if (!eglMakeCurrent(mDisplay, mSurface, mSurface, mContext)) {
-            LOGE("ensureCurrent failed to eglMakeCurrent: %d", eglGetError());
-            return false;
+            EGLint err = eglGetError();
+            LOGW("eglMakeCurrent direct switch failed (0x%x), releasing previous thread context...", err);
+            eglMakeCurrent(mDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            if (!eglMakeCurrent(mDisplay, mSurface, mSurface, mContext)) {
+                LOGE("ensureCurrent failed to eglMakeCurrent: 0x%x", eglGetError());
+                return false;
+            }
         }
     }
     return true;
@@ -157,6 +171,7 @@ bool GLESRenderer::initEGL(ANativeWindow* window) {
     mWindowHeight = ANativeWindow_getHeight(mWindow);
 
     initGL();
+    releaseCurrent();
     LOGI("EGL Initialized successfully for GLES 3.2 (%dx%d)", mWindowWidth, mWindowHeight);
     return true;
 }
@@ -264,6 +279,7 @@ void GLESRenderer::onSurfaceChanged(int width, int height) {
     mWindowHeight = height;
     if (mHasImage) {
         renderBlurPasses();
+        releaseCurrent();
     }
 }
 
@@ -332,20 +348,24 @@ double GLESRenderer::setImageData(const uint8_t* data, size_t size) {
     mHasImage = true;
     LOGI("Natively decoded JPEG/PNG texture loaded: %dx%d", w, h);
 
-    return renderBlurPasses();
+    double duration = renderBlurPasses();
+    releaseCurrent();
+    return duration;
 }
 
 double GLESRenderer::setBlurRadius(int radiusPx) {
     std::lock_guard<std::mutex> lock(mMutex);
     mBlurRadiusPx = std::max(1, std::min(1000, radiusPx));
     if (mHasImage) {
-        return renderBlurPasses();
+        double duration = renderBlurPasses();
+        releaseCurrent();
+        return duration;
     }
     return 0.0;
 }
 
-double GLESRenderer::renderBlurPasses() {
-    if (!mHasImage || mImageWidth <= 0 || mImageHeight <= 0) return 0.0;
+double GLESRenderer::renderBlurPassesWithRes(int imgW, int imgH, bool swapDisplay) {
+    if (imgW <= 0 || imgH <= 0) return 0.0;
     if (!ensureCurrent()) return 0.0;
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -355,8 +375,8 @@ double GLESRenderer::renderBlurPasses() {
     if (mBlurRadiusPx > 10) {
         scale = 1.0f + (mBlurRadiusPx - 10) / 15.0f;
     }
-    int targetFBOWidth = std::max(1, (int)(mImageWidth / scale));
-    int targetFBOHeight = std::max(1, (int)(mImageHeight / scale));
+    int targetFBOWidth = std::max(1, (int)(imgW / scale));
+    int targetFBOHeight = std::max(1, (int)(imgH / scale));
 
     setupFBOs(targetFBOWidth, targetFBOHeight);
 
@@ -386,25 +406,23 @@ double GLESRenderer::renderBlurPasses() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     // Pass 3: Render to Preview Window Surface with aspect ratio fitting
-    if (mSurface != EGL_NO_SURFACE && mWindowWidth > 0 && mWindowHeight > 0) {
+    if (swapDisplay && mSurface != EGL_NO_SURFACE && mWindowWidth > 0 && mWindowHeight > 0) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, mWindowWidth, mWindowHeight);
         glClearColor(0.0706f, 0.0706f, 0.0706f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        float imageAspect = (float)mImageWidth / (float)mImageHeight;
+        float imageAspect = (float)imgW / (float)imgH;
         float windowAspect = (float)mWindowWidth / (float)mWindowHeight;
 
         int vpX = 0, vpY = 0, vpW = mWindowWidth, vpH = mWindowHeight;
 
         if (imageAspect > windowAspect) {
-            // Image is wider than preview surface: fit width, letterbox top/bottom
             vpW = mWindowWidth;
             vpH = (int)(mWindowWidth / imageAspect);
             vpX = 0;
             vpY = (mWindowHeight - vpH) / 2;
         } else {
-            // Image is taller than preview surface: fit height, pillarbox left/right
             vpH = mWindowHeight;
             vpW = (int)(mWindowHeight * imageAspect);
             vpX = (mWindowWidth - vpW) / 2;
@@ -418,18 +436,213 @@ double GLESRenderer::renderBlurPasses() {
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
         eglSwapBuffers(mDisplay, mSurface);
+        glFinish();
+    } else {
+        glFlush();
     }
-    glFinish();
 
     auto end = std::chrono::high_resolution_clock::now();
     mLastProcessingTimeMs = std::chrono::duration<double, std::milli>(end - start).count();
     return mLastProcessingTimeMs;
 }
 
+double GLESRenderer::renderBlurPasses(bool swapDisplay) {
+    if (!mHasImage || mImageWidth <= 0 || mImageHeight <= 0) return 0.0;
+    return renderBlurPassesWithRes(mImageWidth, mImageHeight, swapDisplay);
+}
+
+std::string GLESRenderer::runBenchmarkSuiteWithSamples(const std::vector<std::vector<uint8_t>>& samplePayloads, int iterationsPerRadius) {
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (!ensureCurrent()) {
+        return "{\"error\": \"EGL context unavailable\"}";
+    }
+
+    int originalRadius = mBlurRadiusPx;
+    int originalW = mImageWidth;
+    int originalH = mImageHeight;
+    bool originalHasImage = mHasImage;
+
+    std::vector<int> targetRadii = {1, 5, 10, 25, 50, 100, 250, 500, 1000};
+    int totalIterations = 100;
+
+    std::ostringstream json;
+    json << "{\n";
+    json << "  \"iterationsPerRadius\": " << totalIterations << ",\n";
+    json << "  \"resolutions\": [\n";
+
+    if (!samplePayloads.empty()) {
+        for (size_t sIdx = 0; sIdx < samplePayloads.size(); ++sIdx) {
+            const auto& payload = samplePayloads[sIdx];
+            if (payload.empty()) continue;
+
+            int w = 0, h = 0, comp = 0;
+            uint8_t* pixels = stbi_load_from_memory(payload.data(), (int)payload.size(), &w, &h, &comp, 4);
+            if (!pixels || w <= 0 || h <= 0) {
+                LOGE("Failed to decode benchmark sample asset index %d", (int)sIdx);
+                if (pixels) free(pixels);
+                continue;
+            }
+
+            glBindTexture(GL_TEXTURE_2D, mInputTexture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            free(pixels);
+
+            mImageWidth = w;
+            mImageHeight = h;
+            mHasImage = true;
+
+            std::string label;
+            if (w >= 3000) label = "4K UHD (" + std::to_string(w) + "x" + std::to_string(h) + ")";
+            else if (w >= 1800) label = "Full HD (" + std::to_string(w) + "x" + std::to_string(h) + ")";
+            else label = "HD (" + std::to_string(w) + "x" + std::to_string(h) + ")";
+
+            json << "    {\n";
+            json << "      \"label\": \"" << label << "\",\n";
+            json << "      \"width\": " << w << ",\n";
+            json << "      \"height\": " << h << ",\n";
+            json << "      \"results\": [\n";
+
+            for (size_t rIdx = 0; rIdx < targetRadii.size(); ++rIdx) {
+                int r = targetRadii[rIdx];
+                mBlurRadiusPx = r;
+
+                // Warm-up pass (10 frames)
+                for (int k = 0; k < 10; ++k) {
+                    renderBlurPassesWithRes(w, h, false);
+                }
+
+                std::vector<double> timings;
+                timings.reserve(totalIterations);
+
+                for (int i = 0; i < totalIterations; ++i) {
+                    glFinish();
+                    auto t0 = std::chrono::high_resolution_clock::now();
+                    renderBlurPassesWithRes(w, h, false);
+                    glFinish();
+                    auto t1 = std::chrono::high_resolution_clock::now();
+                    double elapsedMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                    timings.push_back(elapsedMs);
+                }
+
+                std::sort(timings.begin(), timings.end());
+                double minMs = timings.front();
+                double maxMs = timings.back();
+                double sum = std::accumulate(timings.begin(), timings.end(), 0.0);
+                double meanMs = sum / timings.size();
+                size_t p95Index = std::min(timings.size() - 1, (size_t)(timings.size() * 0.95));
+                double p95Ms = timings[p95Index];
+                double fps = (meanMs > 0.0) ? (1000.0 / meanMs) : 0.0;
+
+                json << std::fixed << std::setprecision(3);
+                json << "        {\n";
+                json << "          \"radiusPx\": " << r << ",\n";
+                json << "          \"meanMs\": " << meanMs << ",\n";
+                json << "          \"p95Ms\": " << p95Ms << ",\n";
+                json << "          \"minMs\": " << minMs << ",\n";
+                json << "          \"maxMs\": " << maxMs << ",\n";
+                json << "          \"fps\": " << fps << "\n";
+                json << "        }" << (rIdx + 1 < targetRadii.size() ? "," : "") << "\n";
+            }
+
+            json << "      ]\n";
+            json << "    }" << (sIdx + 1 < samplePayloads.size() ? "," : "") << "\n";
+        }
+    } else {
+        struct TargetResolution {
+            std::string label;
+            int width;
+            int height;
+        };
+        std::vector<TargetResolution> targetResList = {
+            {"HD (1280x720)", 1280, 720},
+            {"Full HD (1920x1080)", 1920, 1080},
+            {"4K UHD (3840x2160)", 3840, 2160}
+        };
+        for (size_t resIdx = 0; resIdx < targetResList.size(); ++resIdx) {
+            const auto& res = targetResList[resIdx];
+            json << "    {\n";
+            json << "      \"label\": \"" << res.label << "\",\n";
+            json << "      \"width\": " << res.width << ",\n";
+            json << "      \"height\": " << res.height << ",\n";
+            json << "      \"results\": [\n";
+
+            for (size_t rIdx = 0; rIdx < targetRadii.size(); ++rIdx) {
+                int r = targetRadii[rIdx];
+                mBlurRadiusPx = r;
+
+                for (int k = 0; k < 10; ++k) {
+                    renderBlurPassesWithRes(res.width, res.height, false);
+                }
+
+                std::vector<double> timings;
+                timings.reserve(totalIterations);
+
+                for (int i = 0; i < totalIterations; ++i) {
+                    glFinish();
+                    auto t0 = std::chrono::high_resolution_clock::now();
+                    renderBlurPassesWithRes(res.width, res.height, false);
+                    glFinish();
+                    auto t1 = std::chrono::high_resolution_clock::now();
+                    double elapsedMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                    timings.push_back(elapsedMs);
+                }
+
+                std::sort(timings.begin(), timings.end());
+                double minMs = timings.front();
+                double maxMs = timings.back();
+                double sum = std::accumulate(timings.begin(), timings.end(), 0.0);
+                double meanMs = sum / timings.size();
+                size_t p95Index = std::min(timings.size() - 1, (size_t)(timings.size() * 0.95));
+                double p95Ms = timings[p95Index];
+                double fps = (meanMs > 0.0) ? (1000.0 / meanMs) : 0.0;
+
+                json << std::fixed << std::setprecision(3);
+                json << "        {\n";
+                json << "          \"radiusPx\": " << r << ",\n";
+                json << "          \"meanMs\": " << meanMs << ",\n";
+                json << "          \"p95Ms\": " << p95Ms << ",\n";
+                json << "          \"minMs\": " << minMs << ",\n";
+                json << "          \"maxMs\": " << maxMs << ",\n";
+                json << "          \"fps\": " << fps << "\n";
+                json << "        }" << (rIdx + 1 < targetRadii.size() ? "," : "") << "\n";
+            }
+
+            json << "      ]\n";
+            json << "    }" << (resIdx + 1 < targetResList.size() ? "," : "") << "\n";
+        }
+    }
+
+    // Restore original state
+    mBlurRadiusPx = originalRadius;
+    mImageWidth = originalW;
+    mImageHeight = originalH;
+    mHasImage = originalHasImage;
+
+    if (mHasImage) {
+        renderBlurPasses(true);
+    }
+    releaseCurrent();
+
+    json << "  ]\n";
+    json << "}";
+
+    return json.str();
+}
+
+std::string GLESRenderer::runBenchmarkSuite(int iterationsPerRadius) {
+    return runBenchmarkSuiteWithSamples({}, iterationsPerRadius);
+}
+
 void GLESRenderer::renderFrame() {
     std::lock_guard<std::mutex> lock(mMutex);
     if (mHasImage) {
         renderBlurPasses();
+        releaseCurrent();
     }
 }
 
@@ -540,6 +753,7 @@ std::vector<uint8_t> GLESRenderer::exportImage(int format) {
     }
 
     LOGI("Exported image: %d bytes (format=%d, size=%dx%d, radius=%d)", (int)result.size(), format, mImageWidth, mImageHeight, mBlurRadiusPx);
+    releaseCurrent();
     return result;
 }
 

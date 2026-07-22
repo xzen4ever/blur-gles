@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.view.View;
 import android.view.SurfaceHolder;
 import android.widget.SeekBar;
 import android.widget.Toast;
@@ -24,10 +25,15 @@ import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.example.blurgles.databinding.ActivityMainBinding;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements SurfaceHolder.Callback {
 
@@ -35,8 +41,10 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
     private double slowestMs = -1.0;
     private double fastestMs = -1.0;
+    private boolean hasLoadedImage = false;
 
     private ActivityResultLauncher<PickVisualMediaRequest> imagePickerLauncher;
+    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,6 +85,8 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
 
         binding.btnSaveImage.setOnClickListener(v -> saveBlurredImage());
 
+        binding.btnRunBenchmark.setOnClickListener(v -> runBenchmark());
+
         binding.seekbarRadius.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
@@ -107,6 +117,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
             byte[] bytes = byteBuffer.toByteArray();
 
             double durationMs = NativeBlurEngine.nativeSetImageData(bytes);
+            hasLoadedImage = durationMs >= 0.0;
             updateProcessingTime(durationMs);
             Toast.makeText(this, "Image loaded natively", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
@@ -171,6 +182,97 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
         }
     }
 
+    private byte[] loadAssetBytes(String path) {
+        try (InputStream is = getAssets().open(path);
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[16384];
+            int len;
+            while ((len = is.read(buf)) != -1) {
+                baos.write(buf, 0, len);
+            }
+            return baos.toByteArray();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private void runBenchmark() {
+        binding.cardBenchmarkReport.setVisibility(View.VISIBLE);
+        binding.tvBenchmarkResults.setText("Running GPU Hardware Benchmark Suite...\nLoading Asset Samples (HD, Full HD, 4K) x 9 Radii x 100 Runs (10 Warm-up)\nPlease wait...");
+        binding.btnRunBenchmark.setEnabled(false);
+
+        executorService.execute(() -> {
+            byte[] hdBytes = loadAssetBytes("samples/sample_hd_720p.png");
+            byte[] fhdBytes = loadAssetBytes("samples/sample_fhd_1080p.png");
+            byte[] uhdBytes = loadAssetBytes("samples/sample_4k_2160p.png");
+
+            byte[][] samplePayloads = null;
+            if (hdBytes != null && fhdBytes != null && uhdBytes != null) {
+                samplePayloads = new byte[][]{ hdBytes, fhdBytes, uhdBytes };
+            }
+
+            String jsonResult;
+            if (samplePayloads != null) {
+                jsonResult = NativeBlurEngine.nativeRunBenchmarkWithSamples(samplePayloads, 100);
+            } else {
+                jsonResult = NativeBlurEngine.nativeRunBenchmark(100);
+            }
+
+            runOnUiThread(() -> {
+                binding.btnRunBenchmark.setEnabled(true);
+                formatBenchmarkReport(jsonResult);
+            });
+        });
+    }
+
+    private void formatBenchmarkReport(String jsonResult) {
+        try {
+            JSONObject obj = new JSONObject(jsonResult);
+            if (obj.has("error")) {
+                binding.tvBenchmarkResults.setText("Benchmark Error: " + obj.getString("error"));
+                return;
+            }
+
+            int iters = obj.optInt("iterationsPerRadius", 100);
+            JSONArray resolutions = obj.getJSONArray("resolutions");
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("=== GPU HARDWARE BENCHMARK REPORT ===\n");
+            sb.append("Config: 10 Warm-up + ").append(iters).append(" Runs per Radius\n\n");
+
+            for (int rIdx = 0; rIdx < resolutions.length(); rIdx++) {
+                JSONObject resObj = resolutions.getJSONObject(rIdx);
+                String label = resObj.getString("label");
+                JSONArray results = resObj.getJSONArray("results");
+
+                sb.append("----------------------------------------------------\n");
+                sb.append("[").append(label).append("]\n");
+                sb.append("Radius  |  Mean(ms) |   P95(ms) |  Min/Max  |    FPS\n");
+                sb.append("----------------------------------------------------\n");
+
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject item = results.getJSONObject(i);
+                    int r = item.getInt("radiusPx");
+                    double mean = item.getDouble("meanMs");
+                    double p95 = item.getDouble("p95Ms");
+                    double min = item.getDouble("minMs");
+                    double max = item.getDouble("maxMs");
+                    double fps = item.getDouble("fps");
+
+                    sb.append(String.format(Locale.US,
+                            "%4d px | %9.2f | %9.2f | %4.1f/%-4.1f | %6.1f\n",
+                            r, mean, p95, min, max, fps));
+                }
+                sb.append("\n");
+            }
+            binding.tvBenchmarkResults.setText(sb.toString().trim());
+        } catch (Exception e) {
+            e.printStackTrace();
+            binding.tvBenchmarkResults.setText("Raw Benchmark Output:\n" + jsonResult);
+        }
+    }
+
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
         NativeBlurEngine.nativeSurfaceCreated(holder.getSurface());
@@ -189,6 +291,7 @@ public class MainActivity extends AppCompatActivity implements SurfaceHolder.Cal
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        executorService.shutdown();
         NativeBlurEngine.nativeRelease();
     }
 }

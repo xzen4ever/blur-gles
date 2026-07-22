@@ -14,5 +14,7 @@ public class NativeBlurEngine {
     public static native double nativeSetImageData(byte[] data);
     public static native double nativeSetBlurRadius(int radiusPx);
     public static native byte[] nativeExportImage(int format);
+    public static native String nativeRunBenchmark(int iterationsPerRadius);
+    public static native String nativeRunBenchmarkWithSamples(byte[][] sampleBytesArray, int iterationsPerRadius);
     public static native void nativeRelease();
 }

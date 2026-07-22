@@ -8,6 +8,17 @@
 #include <mutex>
 #include <chrono>
 
+#include <string>
+
+struct BenchmarkResult {
+    int radiusPx = 0;
+    double meanMs = 0.0;
+    double medianMs = 0.0;
+    double p95Ms = 0.0;
+    double minMs = 0.0;
+    double maxMs = 0.0;
+};
+
 class GLESRenderer {
 public:
     GLESRenderer();
@@ -24,6 +35,10 @@ public:
     // Updates blur radius (1 - 1000 px) and returns processing duration in ms
     double setBlurRadius(int radiusPx);
 
+    // Runs automated GPU benchmark suite across resolutions & radii (1 to 1000 px) using provided sample images
+    std::string runBenchmarkSuite(int iterationsPerRadius = 100);
+    std::string runBenchmarkSuiteWithSamples(const std::vector<std::vector<uint8_t>>& samplePayloads, int iterationsPerRadius = 100);
+
     // Renders and reads back blurred image bytes (0 = JPEG, 1 = PNG)
     std::vector<uint8_t> exportImage(int format);
 
@@ -33,8 +48,10 @@ private:
     void initGL();
     void setupFBOs(int width, int height);
     void releaseFBOs();
-    double renderBlurPasses();
+    double renderBlurPasses(bool swapDisplay = true);
+    double renderBlurPassesWithRes(int imgW, int imgH, bool swapDisplay = true);
     bool ensureCurrent();
+    void releaseCurrent();
 
     ANativeWindow* mWindow = nullptr;
     EGLDisplay mDisplay = EGL_NO_DISPLAY;

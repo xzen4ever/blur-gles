@@ -69,6 +69,36 @@ Java_com_example_blurgles_NativeBlurEngine_nativeExportImage(JNIEnv *env, jclass
     return resultArray;
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_example_blurgles_NativeBlurEngine_nativeRunBenchmark(JNIEnv *env, jclass clazz, jint iterationsPerRadius) {
+    if (!gRenderer) return env->NewStringUTF("{\"error\": \"Renderer not initialized\"}");
+    std::string jsonResult = gRenderer->runBenchmarkSuite((int)iterationsPerRadius);
+    return env->NewStringUTF(jsonResult.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_example_blurgles_NativeBlurEngine_nativeRunBenchmarkWithSamples(JNIEnv *env, jclass clazz, jobjectArray sampleBytesArray, jint iterationsPerRadius) {
+    if (!gRenderer) return env->NewStringUTF("{\"error\": \"Renderer not initialized\"}");
+
+    std::vector<std::vector<uint8_t>> samples;
+    if (sampleBytesArray != nullptr) {
+        jsize count = env->GetArrayLength(sampleBytesArray);
+        for (jsize i = 0; i < count; ++i) {
+            jbyteArray byteArray = (jbyteArray)env->GetObjectArrayElement(sampleBytesArray, i);
+            if (byteArray != nullptr) {
+                jsize len = env->GetArrayLength(byteArray);
+                jbyte* bytes = env->GetByteArrayElements(byteArray, nullptr);
+                samples.emplace_back((uint8_t*)bytes, (uint8_t*)bytes + len);
+                env->ReleaseByteArrayElements(byteArray, bytes, JNI_ABORT);
+                env->DeleteLocalRef(byteArray);
+            }
+        }
+    }
+
+    std::string jsonResult = gRenderer->runBenchmarkSuiteWithSamples(samples, (int)iterationsPerRadius);
+    return env->NewStringUTF(jsonResult.c_str());
+}
+
 JNIEXPORT void JNICALL
 Java_com_example_blurgles_NativeBlurEngine_nativeRelease(JNIEnv *env, jclass clazz) {
     if (gRenderer) {

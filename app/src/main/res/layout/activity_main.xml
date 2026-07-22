@@ -251,6 +251,7 @@
 
         <!-- Action Buttons Row -->
         <LinearLayout
+            android:id="@+id/layout_buttons"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
@@ -263,27 +264,75 @@
                 android:id="@+id/btn_load_image"
                 android:layout_width="0dp"
                 android:layout_height="50dp"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="6dp"
                 android:layout_weight="1"
                 android:background="@drawable/btn_secondary"
                 android:text="Load Image"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary"
-                android:textSize="14sp"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <android.widget.Button
+                android:id="@+id/btn_run_benchmark"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_marginHorizontal="3dp"
+                android:layout_weight="1.1"
+                android:background="@drawable/btn_secondary"
+                android:text="Run Benchmark"
+                android:textAllCaps="false"
+                android:textColor="@color/accent_gold"
+                android:textSize="13sp"
                 android:textStyle="bold" />
 
             <android.widget.Button
                 android:id="@+id/btn_save_image"
                 android:layout_width="0dp"
                 android:layout_height="50dp"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="6dp"
                 android:layout_weight="1"
                 android:background="@drawable/btn_primary"
                 android:text="Save Image"
                 android:textAllCaps="false"
                 android:textColor="@color/btn_primary_text"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Benchmark Report Card -->
+        <LinearLayout
+            android:id="@+id/card_benchmark_report"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_card"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/layout_buttons">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="GPU HARDWARE BENCHMARK REPORT"
+                android:textColor="@color/text_tertiary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.08" />
+
+            <TextView
+                android:id="@+id/tv_benchmark_results"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="3dp"
+                android:text="Running benchmark suite..."
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
         </LinearLayout>
 
     </androidx.constraintlayout.widget.ConstraintLayout>
